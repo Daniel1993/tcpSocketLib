@@ -9,11 +9,11 @@
 int main (int argc, char **argv)
 {
   char publKey[128] = "publ.pem";
-  char publKey2[128] = "publ2.pem";
+  // char publKey2[128] = "publ2.pem";
   char privKey[128] = "priv.pem";
-  char privKey2[128] = "priv2.pem";
+  // char privKey2[128] = "priv2.pem";
   char publKeyCsr[128] = "publ.csr";
-  char publKeyCsr2[128] = "publ2.csr";
+  // char publKeyCsr2[128] = "publ2.csr";
   char publKeyCrt1[128] = "publ1.crt";
   char publKeyCrt2[128] = "publ2.crt";
   char msg[64] = "Hello world!";
@@ -48,7 +48,10 @@ int main (int argc, char **argv)
 
   printf("writing keys in %s (public) and %s (private)\n", publKey, privKey);
 
-  tsl_create_keys(privKey, publKey, publKeyCsr, (tsl_csr_fields_t){
+  tsl_identity_t *id1 = tsl_alloc_identity();
+  tsl_identity_t *id2 = tsl_alloc_identity();
+  
+  fields = (tsl_csr_fields_t){
     .country = "PT",
     .state = "PT",
     .locality = "Lisbon",
@@ -56,12 +59,12 @@ int main (int argc, char **argv)
     .unit = "subjectOrgUnit",
     .commonName = "subject",
     .email = "subject@com.pt"
-  });
+  };
 
-  tsl_load_privkey(privKey);
-  tsl_load_publkey(publKey);
+  tsl_id_create_keys(id1, fields);
+  tsl_id_create_keys(id2, fields);
 
-  tsl_create_self_signed_cert(publKeyCrt1, 500, (tsl_csr_fields_t){
+  tsl_id_create_self_signed_cert(id1, 500, (tsl_csr_fields_t){
     .country = "PT",
     .state = "PT",
     .locality = "Lisbon",
@@ -71,21 +74,17 @@ int main (int argc, char **argv)
     .email = "my_email@com.pt"
   });
 
-  tsl_load_cert(publKeyCrt1);
-
   len = 512;
-  tsl_load_privkey(privKey); // must have the correct key!
-  if (tsl_sign(msg, msgLen, (void**)&signature, &len)) {
+  if (tsl_id_sign(id1, msg, msgLen, (void**)&signature, &len)) {
     printf("error signing: %s\n", tsl_last_error_msg);
   }
 
   tsl_base64_encode(signature, len, signatureBase64, &signatureBase64Size);
-  tsl_load_publkey(publKey);
   printf("msg = %s signed to %s (len=%lu) verify = %i\n", msg,
-    signatureBase64, len, tsl_verify(signature, len, msg, msgLen));
+    signatureBase64, len, tsl_id_verify(id1, signature, len, msg, msgLen));
   
   printf("tsl_cert(publKeyCrt2 ...)\n");
-  tsl_cert(publKeyCrt2, publKeyCsr, 500, (tsl_csr_fields_t){
+  tsl_id_cert(id1, id2, 500, (tsl_csr_fields_t){
     .country = "PT",
     .state = "PT",
     .locality = "Lisbon",
@@ -95,39 +94,37 @@ int main (int argc, char **argv)
     .email = "issuer@com.pt"
   });
 
-  printf("tsl_load_cert(publKeyCrt2)\n");
-  tsl_load_cert(publKeyCrt2);
-
   printf("tsl_cert_get_issuer(...)\n");
-  tsl_cert_get_issuer(&fields);
+  tsl_id_cert_get_issuer(id2, &fields);
   printf("issuer = %s\n", fields.commonName);
 
-  tsl_cert_get_subject(&fields);
+  tsl_id_cert_get_subject(id2, &fields);
   printf("subject = %s\n", fields.commonName);
 
+  printf("valid cert = %i (should be 1)\n", tsl_id_cert_verify(id2, id1, NULL));
+
   msgLen = strlen(msg);
-  tsl_sign(msg, msgLen, (void**)&signature, &cipLen);
+  tsl_id_sign(id2, msg, msgLen, (void**)&signature, &cipLen);
 
   printf("Message = %s\n", msg);
   
-  tsl_load_privkey(privKey); // must have the correct key!
   len = 512;
-  if (tsl_sign(msg, msgLen, (void**)&signature, &len)) {
+  if (tsl_id_sign(id2, msg, msgLen, (void**)&signature, &len)) {
     printf("error signing: %s\n", tsl_last_error_msg);
   }
   tsl_base64_encode(signature, len, signatureBase64, &signatureBase64Size);
 
   printf("Signed message = %s (%zu B, verify = %i)\n", signatureBase64, len,
-    tsl_verify(signature, len, msg, msgLen));
+    tsl_id_verify(id2, signature, len, msg, msgLen));
 
-  int isValid = tsl_cert_check_date_valid(signature, cipLen, msg, msgLen);
+  int isValid = tsl_id_cert_check_date_valid(id2);
   printf("Certificarte date is valid = %i\n", isValid);
 
-  tsl_destroy();
+  tsl_id_destroy_keys(id2);
 
   // -------------------------------
   // creates a new key and uses the previous as peer-key
-  tsl_create_keys(privKey2, publKey2, publKeyCsr2, (tsl_csr_fields_t){
+  tsl_id_create_keys(id2, (tsl_csr_fields_t){
     .country = "PT",
     .state = "PT",
     .locality = "Lisbon",
@@ -137,36 +134,45 @@ int main (int argc, char **argv)
     .email = "subject@com.pt"
   });
 
-  void *eckey = NULL;
-  void *eckeyDes = NULL;
-  char serializeEckey[8192];
+  // void *eckey = NULL;
+  // void *eckeyDes = NULL;
+  char serializeEckey1[8192];
   char cipher1[8192];
   size_t cipher_size;
-  void *eckey2 = NULL; // repeat with new key, should give the same secret
-  void *eckeyDes2 = NULL;
+  // void *eckey2 = NULL; // repeat with new key, should give the same secret
+  // void *eckeyDes2 = NULL;
   char serializeEckey2[8192];
   char decipher2[8192];
   size_t msg_size;
 
-  tsl_load_privkey(privKey);
-  tsl_get_ec_key(&eckey); // from private key
-  tsl_serialize_ec_pubkey(eckey, (void*)serializeEckey, 8192);
-  tsl_deserialize_ec_pubkey((void*)serializeEckey, 8192, &eckeyDes);
+  tsl_identity_t *id1a = tsl_alloc_identity();
+  tsl_identity_t *id2a = tsl_alloc_identity();
 
-  tsl_load_privkey(privKey2);
-  tsl_create_secret(eckeyDes); // should return 0
-  tsl_load_secret(0);
-  tsl_sym_cipher(msg, strlen(msg), cipher1, &cipher_size);
+  // Node 1 creates a temporary key ...
+  tsl_id_gen_ec_key(id1);
+  // ... then serializes the public key and sends
+  tsl_id_serialize_ec_pubkey(id1, (void*)serializeEckey1, 8192);
+  
+  // Same for Node 2
+  tsl_id_gen_ec_key(id2);
+  tsl_id_serialize_ec_pubkey(id2, (void*)serializeEckey2, 8192);
+  
+  // Node 1 deserializes N2 key
+  tsl_id_deserialize_ec_pubkey(id2a, (void*)serializeEckey2, 8192);
+  tsl_id_gen_peer_secret(id1, id2a);
+  tsl_id_load_secret(id2a, NULL); // Now we can communicate N1->N2
+  
+  // Same for Node 2
+  tsl_id_deserialize_ec_pubkey(id1a, (void*)serializeEckey1, 8192);
+  tsl_id_gen_peer_secret(id2, id1a);
+  tsl_id_load_secret(id1a, NULL);
 
-  tsl_load_privkey(privKey2);
-  tsl_get_ec_key(&eckey2); // from private key
-  tsl_serialize_ec_pubkey(eckey2, (void*)serializeEckey2, 8192);
-  tsl_deserialize_ec_pubkey((void*)serializeEckey2, 8192, &eckeyDes2);
-
-  tsl_load_privkey(privKey);
-  tsl_create_secret(eckeyDes2); // should return 1
-  tsl_load_secret(1);
-  tsl_sym_decipher(cipher1, cipher_size, decipher2, &msg_size);
+  // id1a --> secret of N2 shared with N1
+  // id2a --> secret of N1 shared with N2
+  
+  // N1->N2
+  tsl_id_sym_cipher(id2a, msg, strlen(msg), cipher1, &cipher_size);
+  tsl_id_sym_decipher(id1a, cipher1, cipher_size, decipher2, &msg_size);
 
   printf("msg = %s, decipher = %s\n", msg, decipher2);
 
@@ -174,7 +180,8 @@ int main (int argc, char **argv)
   char hmacBase64[1024];
   size_t hmacSize;
   size_t hmacBase64Size;
-  tsl_hmac(msg, strlen(msg), hmac, &hmacSize);
+
+  tsl_id_hmac(id2a, msg, strlen(msg), hmac, &hmacSize);
   tsl_base64_encode(hmac, hmacSize, hmacBase64, &hmacBase64Size);
   printf("msg = %s, hmac = %s (%zu Bytes)\n", msg, hmacBase64, hmacSize);
 

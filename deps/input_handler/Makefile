@@ -27,12 +27,16 @@ TEST_OBJS := \
 	tests/main.o \
 #
 
-all: lib$(LIB).a main
-	# DONE
+all: main
+	# Done
+
+main: lib$(LIB).a
+	# test compiled
 
 lib$(LIB).a: $(OBJS)
 	@echo "Linking..."
 	$(AR) $@ $(OBJS)
+	# lib compiled
 
 main: tests/main.o
 	$(CXX) $^ $(LDFLAGS) -o $@

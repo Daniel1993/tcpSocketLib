@@ -4,9 +4,9 @@ OBJS     := \
 #
 
 LIBS     := \
-	-L ./deps/threading -l threading \
-	-L ./deps/input_handler -l input_handler \
-	-pthread -lcrypto -lssl
+	-L ./deps/threading -l threading -L /usr/local/opt/openssl/lib \
+	-L ./deps/input_handler -l ssl -l crypto -l input_handler \
+	-pthread 
 INCS     := -I ./include -I ./deps/threading/include -I ./deps/input_handler/include
 DEFS     := -Wall -Wcpp
 
@@ -28,6 +28,8 @@ CXXFLAGS := -c $(DEFS) $(INCS)
 LDFLAGS  := -L . -l $(LIB) $(LIBS)
 
 all: deps lib$(LIB).a test/test test/test_ssl
+	cd ./deps/threading     && $(MAKE) 
+	cd ./deps/input_handler && $(MAKE) 
 	# DONE
 
 deps: threading input_handler
@@ -56,7 +58,7 @@ test/test_ssl: test/test_ssl.o
 	@echo "--- $<"
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
-clean:
+clean: clean_deps
 	rm -f $(OBJS) $(TEST_OBJS) lib$(LIB).a test/test test/test_ssl test/*.o
 
 clean_deps:

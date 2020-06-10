@@ -8,6 +8,7 @@ extern "C" {
 #endif
 
   void input_parse(int argc, char **argv);
+  void input_parse_file(char *fileName); // the same format as in the command line
   long input_getLong(char *arg);
   double input_getDouble(char *arg);
   size_t input_getString(char *arg, char *out);

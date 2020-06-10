@@ -86,11 +86,14 @@ static void server(int id, int nbThreads, void *arg)
     .sin_port = htons(atol(serverPort)),
     .sin_addr = { .s_addr = htonl(INADDR_ANY) }
   }, cli;
+  const struct sockaddr_in servaddr_read;
   socklen_t len;
   INIT_ERROR_CHECK();
 
   ERROR_CHECK((socketfd = socket(AF_INET, SOCK_STREAM, 0)), { goto ret; });
   ERROR_CHECK(bind(socketfd, (struct sockaddr*)&servaddr, sizeof(servaddr)), { goto ret; });
+  ERROR_CHECK(getsockname(socketfd, &servaddr_read, sizeof(servaddr_read)), { goto ret; });
+  sprintf(serverPort, "%ui", ntohs(servaddr_read.sin_port));
   ERROR_CHECK(listen(socketfd, TSL_MSG_QUEUE_SIZE), { goto ret; });
 
   isServerOn = 1;
@@ -117,23 +120,31 @@ static void server(int id, int nbThreads, void *arg)
   retError = 0;
 ret:
   if (retError) {
+    isServerSet = 0;
     fprintf(stderr, "ERROR %s \n", tsl_last_error_msg);
   }
 }
 
 int tsl_init(char *port)
 {
-  isServerSet = 0;
-  if (port != NULL) {
-    isServerSet = 1;
-    memcpy(serverPort, port, strlen(port));
-    threading_start(1/* server */, TSL_HANDLER_THREADS/* handler */, server, NULL);
-    while (!isServerOn);
+  if (isServerSet) {
+    return -2;
   }
+  if (port != NULL) {
+    memcpy(serverPort, port, strlen(port));
+  }
+  isServerSet = 1;
+  threading_start(1/* server */, TSL_HANDLER_THREADS/* handler */, server, NULL);
+  while (!isServerOn);
   SSL_library_init();
   SSL_load_error_strings();
 
   return 0;
+}
+
+int tsl_check_port()
+{
+  return atoi(serverPort);
 }
 
 int tsl_destroy()

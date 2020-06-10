@@ -4,8 +4,8 @@ DEFINES  :=
 #
 LIBS     := -lpthread -lm
 #
-CC       := gcc -std=c11 -Wall
-CXX      := g++ -std=c++14 -Wall
+CC       := gcc -std=c2x -Wall
+CXX      := g++ -std=c++2a -Wall
 AR       := ar rcs
 
 ### Add this if debug needed (GPU run much slower)
@@ -14,6 +14,10 @@ DEBUG_FLAGS  := -g
 # this is needed for the barrier implementation
 ifeq ($(DEBUG),1)
 DEFINES += $(DEBUG_FLAGS)
+endif
+
+ifeq ($(USE_CSTD),1)
+DEFINES += -DUSE_CSTD
 endif
 
 CFLAGS     := -c $(DEFINES) $(INCLUDES)
@@ -45,11 +49,9 @@ lib$(LIB).a: $(OBJS)
 	$(AR) $@ $(OBJS)
 
 %.o:	%.c
-	@echo ""
 	$(CC) $(CFLAGS) -o $@ $<
 
 %.o:	%.cpp
-	@echo ""
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 run:

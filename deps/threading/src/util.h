@@ -1,7 +1,64 @@
 #ifndef UTIL_H_GUARD
 #define UTIL_H_GUARD
 
-#if defined(__APPLE__)
+#define malloc_or_die(var, nb) \
+    if (((var) = (__typeof__((var)))malloc((nb) * sizeof(__typeof__(*(var))))) == NULL) { \
+      fprintf(stderr, "malloc error \"%s\" at " __FILE__":%i\n", \
+      strerror(errno), __LINE__); \
+      exit(EXIT_FAILURE); \
+    } \
+//#define malloc_or_die
+
+#define realloc_or_die(var, nb) \
+    if (((var) = (__typeof__((var)))realloc((var), (nb) * sizeof(__typeof__(*(var))))) == NULL) { \
+      fprintf(stderr, "realloc error \"%s\" at " __FILE__":%i\n", \
+      strerror(errno), __LINE__); \
+      exit(EXIT_FAILURE); \
+    } \
+//#define realloc_or_die
+
+#define thread_create_or_die(thr, attr, callback, arg) \
+    if (pthread_create(thr, attr, callback, (void *)(arg)) != 0) { \
+      fprintf(stderr, "Error creating thread at " __FILE__ ":%i\n", __LINE__); \
+      exit(EXIT_FAILURE); \
+    } \
+//#define thread_create_or_die
+
+#define thread_join_or_die(thr, res) \
+    if (pthread_join(thr, res)) { \
+      fprintf(stderr, "Error joining thread at " __FILE__ ":%i\n", __LINE__); \
+      exit(EXIT_FAILURE); \
+    } \
+//#define thread_join_or_die
+
+#if defined(USE_CSTD)
+#include <threads.h>
+
+typedef struct {
+  void* (*fn)(void*);
+  void*   arg;
+} pthread_to_thrd_arg_t;
+static __thread
+
+static inline int pthread_to_thrd_fn(void *arg)
+{
+  pthread_to_thrd_arg_t args = (pthread_to_thrd_arg_t*)arg;
+  free(arg);
+}
+
+#define pthread_t      thrd_t
+#define pthread_join   thrd_join
+static inline int pthread_create(pthread_t *thr, void *attrs, void*(*fn)(void*), void *arg)
+{
+  pthread_to_thrd_arg_t *args;
+  malloc_or_die(args, 1);
+  args->fn = fn;
+  args->arg = arg;
+  thrd_create(thr, pthread_to_thrd_fn, args);
+}
+
+
+#elif defined(__APPLE__)
 #include <semaphore.h>
 
 //#define thr_sem_t           sem_t*
@@ -85,43 +142,11 @@ pthread_setaffinity_np(
 #define thr_sem_post(s)     sem_post(&s)
 #define thr_sem_wait(s)     sem_wait(&s)
 
+// already defined
+// #define sched_setaffinity pthread_setaffinity_np
+
 #else  /* !__APPLE__ && !__linux__ */
-// TODO: other arches
+#error "No threading lib available"
 #endif /* __APPLE__ */
-
-#define malloc_or_die(var, nb) \
-if (((var) = (__typeof__((var)))malloc((nb) * sizeof(__typeof__(*(var))))) == NULL) { \
-  fprintf(stderr, "malloc error \"%s\" at " __FILE__":%i\n", \
-  strerror(errno), __LINE__); \
-  exit(EXIT_FAILURE); \
-} \
-// malloc_or_die
-
-#define realloc_or_die(var, nb) \
-if (((var) = (__typeof__((var)))realloc((var), (nb) * sizeof(__typeof__(*(var))))) == NULL) { \
-  fprintf(stderr, "realloc error \"%s\" at " __FILE__":%i\n", \
-  strerror(errno), __LINE__); \
-  exit(EXIT_FAILURE); \
-} \
-// malloc_or_die
-
-#if defined(__linux__) || defined(__APPLE__)
-#define thread_create_or_die(thr, attr, callback, arg) \
-  if (pthread_create(thr, attr, callback, (void *)(arg)) != 0) { \
-    fprintf(stderr, "Error creating thread at " __FILE__ ":%i\n", __LINE__); \
-    exit(EXIT_FAILURE); \
-  } \
-// thread_create_or_die
-
-#define thread_join_or_die(thr, res) \
-  if (pthread_join(thr, res)) { \
-    fprintf(stderr, "Error joining thread at " __FILE__ ":%i\n", __LINE__); \
-    exit(EXIT_FAILURE); \
-  } \
-// thread_join_or_die
-#else /* !defined(__linux__) && !defined(__APPLE__) */
-#define thread_create_or_die(thr, attr, callback, arg) /* empty */
-#define thread_join_or_die(thr, res)                   /* empty */
-#endif /* defined(__linux__) || defined(__APPLE__) */
 
 #endif /* UTIL_H_GUARD */

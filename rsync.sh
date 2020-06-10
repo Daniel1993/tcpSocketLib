@@ -20,8 +20,13 @@ fi
 find . -name ".DS_Store" -delete
 find . -name "._*" -delete
 
-ssh $NODE "mkdir -p $DIR/$DM "
+ssh $NODE "mkdir -p $DM "
 make clean
+echo "rsync -avz . $NODE:$DM"
 rsync -avz . $NODE:$DM
 
-ssh $NODE "cd $DM ; make clean ; make DEBUG=1"
+ssh $NODE "                                              \
+	echo -e '\n <<<< tcp-sockets-lib >>>> ' ;              \
+	cd $DM ;                                               \
+	make clean ;                                           \
+	make DEBUG=1 -j4"

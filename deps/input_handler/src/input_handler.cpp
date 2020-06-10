@@ -1,10 +1,13 @@
 #include "input_handler.h"
 
+#include <stdio.h>
 #include <string>
 #include <cstring>
 #include <map>
+#include <vector>
 #include <sstream>
 #include <iostream>
+#include <errno.h>
 
 using namespace std;
 
@@ -24,6 +27,67 @@ void input_parse(int argc, char **argv)
 
 		if (posDelimiter == string::npos) {
       // this one is not in the format <param>=<val>
+      inputArgs[arg] = "";
+      continue;
+		}
+
+    val = arg.substr(posDelimiter+1, arg.length());
+		inputArgs[token] = val;
+  }
+}
+
+size_t split(const string &txt, vector<string> &strs, char ch)
+{
+  size_t pos = txt.find( ch );
+  size_t initialPos = 0;
+  strs.clear();
+
+  // Decompose statement
+  while (pos != string::npos) {
+    string target = txt.substr(initialPos, pos - initialPos);
+    if (target.length() > 1) { // at least an '=' is needed
+      strs.push_back(target);
+    }
+    initialPos = pos + 1;
+    pos = txt.find( ch, initialPos );
+  }
+
+  // Add the last one
+  strs.push_back( txt.substr( initialPos, std::min( pos, txt.size() ) - initialPos + 1 ) );
+
+  return strs.size();
+}
+
+void input_parse_file(char *fileName)
+{
+  FILE *fp = fopen(fileName, "r");
+  size_t fileSize;
+  void *readFile;
+  vector<string> input;
+
+  if (fp == NULL) {
+    fprintf(stderr, "Problem with the input file: %s\n", strerror(errno));
+    return;
+  }
+
+  fseek(fp, 0, SEEK_END);
+  fileSize = ftell(fp);
+  fseek(fp, 0, SEEK_SET);
+  readFile = malloc(fileSize);
+
+  fread(readFile, 1, fileSize, fp);
+  split(string((char*)readFile), input, ' ');
+
+  for (auto it = input.begin(); it != input.end(); ++it) {
+    string arg(*it);
+		string delimiter("=");
+		size_t posDelimiter = arg.find(delimiter);
+		string token = arg.substr(0, posDelimiter);
+		string val("");
+
+		if (posDelimiter == string::npos) {
+      // this one is not in the format <param>=<val>
+      inputArgs[arg] = "";
       continue;
 		}
 

@@ -2,8 +2,9 @@ INCLUDES := -I ../include -I ../deps/threading/include -I ../deps/input_handler/
 #
 DEFINES  :=
 # NOTE: tcpSocket must come first! order matters!
-LIBS     := -L .. -l tcpSocket -L ../deps/threading -l threading \
-	-L ../deps/input_handler -l input_handler -l crypto -l ssl -lpthread -lm 
+LIBS     := -L .. -l tcpSocket -L ../deps/threading -l threading -L /usr/local/opt/openssl/lib \
+	-L ../deps/input_handler -l input_handler -l ssl -l crypto -lpthread -lm 
+
 #
 CC       := gcc -std=c11 -Wall
 CXX      := g++ -std=c++17 -Wall
@@ -21,11 +22,11 @@ DEBUG_FLAGS  := -g
 
 # this is needed for the barrier implementation
 ifeq ($(DEBUG),1)
-DEFINES += $(DEBUG_FLAGS)
+DEFINES  += $(DEBUG_FLAGS)
 endif
 
 ifeq ($(PRODUTION),1)
-DEFINES += -DNDEBUG -O3
+DEFINES  += -DNDEBUG -O3
 endif
 
 CFLAGS     := -c $(DEFINES) $(INCLUDES)
@@ -34,9 +35,9 @@ LDFLAGS    := $(LIBS)
 
 LIB        := threading
 
-OBJS       := \
-	keyManager.o \
-	heartbeat.o \
+OBJS       :=       \
+	keyManager.o      \
+	heartbeat.o       \
 #
 
 .PHONY:	all clean
@@ -76,7 +77,7 @@ rsync_keys: setup_keys
 	rsync -avz $(PWD)/. $(NODE4_ADDR):$(PWD)
 
 start_node0: heartbeat
-	./heartbeat ID=node0 PORT=16120 KEY=./node0_key_priv/priv_key.pem \
+	./heartbeat ID=node0 PORT=16120 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node0_key_priv/priv_key.pem \
 		node1=$(NODE1_ADDR),16121,./node1_key_publ/publ_key.pem \
 		node2=$(NODE2_ADDR),16122,./node2_key_publ/publ_key.pem \
 		node3=$(NODE3_ADDR),16123,./node3_key_publ/publ_key.pem \
@@ -84,7 +85,7 @@ start_node0: heartbeat
 		node5=$(NODE5_ADDR),16125,./node5_key_publ/publ_key.pem
 
 start_node1: heartbeat
-	./heartbeat ID=node1 PORT=16121 KEY=./node1_key_priv/priv_key.pem \
+	./heartbeat ID=node1 PORT=16121 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node1_key_priv/priv_key.pem \
 		node0=$(NODE0_ADDR),16120,./node0_key_publ/publ_key.pem \
 		node2=$(NODE2_ADDR),16122,./node2_key_publ/publ_key.pem \
 		node3=$(NODE3_ADDR),16123,./node3_key_publ/publ_key.pem \
@@ -92,7 +93,7 @@ start_node1: heartbeat
 		node5=$(NODE5_ADDR),16125,./node5_key_publ/publ_key.pem
 
 start_node2: heartbeat
-	./heartbeat ID=node2 PORT=16122 KEY=./node2_key_priv/priv_key.pem \
+	./heartbeat ID=node2 PORT=16122 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node2_key_priv/priv_key.pem \
 		node0=$(NODE0_ADDR),16120,./node0_key_publ/publ_key.pem \
 		node1=$(NODE1_ADDR),16121,./node1_key_publ/publ_key.pem \
 		node3=$(NODE3_ADDR),16123,./node3_key_publ/publ_key.pem \
@@ -100,7 +101,7 @@ start_node2: heartbeat
 		node5=$(NODE5_ADDR),16125,./node5_key_publ/publ_key.pem
 
 start_node3: heartbeat
-	./heartbeat ID=node3 PORT=16123 KEY=./node3_key_priv/priv_key.pem \
+	./heartbeat ID=node3 PORT=16123 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node3_key_priv/priv_key.pem \
 		node0=$(NODE0_ADDR),16120,./node0_key_publ/publ_key.pem \
 		node1=$(NODE1_ADDR),16121,./node1_key_publ/publ_key.pem \
 		node2=$(NODE2_ADDR),16122,./node2_key_publ/publ_key.pem \
@@ -108,7 +109,7 @@ start_node3: heartbeat
 		node5=$(NODE5_ADDR),16125,./node5_key_publ/publ_key.pem
 
 start_node4: heartbeat
-	./heartbeat ID=node4 PORT=16124 KEY=./node4_key_priv/priv_key.pem \
+	./heartbeat ID=node4 PORT=16124 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node4_key_priv/priv_key.pem \
 		node0=$(NODE0_ADDR),16120,./node0_key_publ/publ_key.pem \
 		node1=$(NODE1_ADDR),16121,./node1_key_publ/publ_key.pem \
 		node2=$(NODE2_ADDR),16122,./node2_key_publ/publ_key.pem \
@@ -116,7 +117,7 @@ start_node4: heartbeat
 		node5=$(NODE5_ADDR),16125,./node5_key_publ/publ_key.pem
 
 start_node5: heartbeat
-	./heartbeat ID=node5 PORT=16125 KEY=./node5_key_priv/priv_key.pem \
+	./heartbeat ID=node5 PORT=16125 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node5_key_priv/priv_key.pem \
 		node0=$(NODE0_ADDR),16120,./node0_key_publ/publ_key.pem \
 		node1=$(NODE1_ADDR),16121,./node1_key_publ/publ_key.pem \
 		node2=$(NODE2_ADDR),16122,./node2_key_publ/publ_key.pem \
@@ -124,15 +125,13 @@ start_node5: heartbeat
 		node4=$(NODE4_ADDR),16124,./node4_key_publ/publ_key.pem
 
 %.o:	%.c
-	@echo ""
 	$(CC) $(CFLAGS) -o $@ $<
 
 %.o:	%.cpp
-	@echo ""
 	$(CXX) $(CXXFLAGS) -o $@ $<
 
 run:
 	make all
 
 clean:
-	rm -f *.o keyManager heartbeat
+	rm -fr *.o keyManager heartbeat *_key_priv *_key_publ 

@@ -15,12 +15,16 @@
 using namespace std;
 
 static char port[16] = "16123";
-static char privKey[1024];
 static char id[64] = "node1";
+static char masterCert[1024];
+static char privKey[1024];
+static char exchangeKey[2048];
 static map<string,int> secrets;
-static map<string,tuple<string, string, int, string>> otherNodes;
+static map<string,tuple<string, string, tsl_identity_t*, int, int>> otherNodes;
+tsl_identity_t *myId;
+tsl_identity_t *caCert;
 
-typedef enum { HEARTBEAT = 1, ACK, NACK} MSG_TYPE;
+typedef enum { HEARTBEAT = 1, ACK, NACK, KEY_XCH } MSG_TYPE;
 
 typedef struct {
   MSG_TYPE type;
@@ -28,7 +32,8 @@ typedef struct {
 
 typedef struct {
   msg_header_s header;
-  char text[TSL_HASH_SIZE];
+  char from[128];
+  char text[2048];
 } msg_s;
 
 typedef struct {
@@ -61,8 +66,6 @@ int handle_nodes(const char *inputArg)
     string addr, port, publKey;
     string delimiter = ",";
     size_t pos = 0;
-    void *peerkey = NULL;
-    int secretId = -1;
 
     if ((pos = value.find(delimiter)) == string::npos) return 0;
     addr = value.substr(0, pos);
@@ -73,14 +76,20 @@ int handle_nodes(const char *inputArg)
     if (value.length() == 0) return 0;
     publKey = value;
 
-    tsl_load_publkey((char*)publKey.c_str());
-    tsl_get_ec_from_pubkey(&peerkey);
-    tsl_serialize_ec_pubkey(peerkey, buffer, 1024);
-    secretId = tsl_create_secret(peerkey);
+    tsl_identity_t *otherId = tsl_alloc_identity();
+    tsl_load_identity(otherId, NULL, publKey.c_str(), NULL, NULL, masterCert);
+    if (!tsl_id_cert_verify(otherId, caCert, NULL)) {
+      printf("[ERROR]: verification of %s cert failed\n", arg.c_str());
+    }
 
-    otherNodes.insert(make_pair(arg, make_tuple(addr, port, secretId, publKey)));
-    printf("%s: addr = %s, port = %s, public key = %s, secretId = %i\n",
-      arg.c_str(), addr.c_str(), port.c_str(), publKey.c_str(), secretId);
+    // tsl_id_gen_ec_key(otherId); // need to serl, send, deserl...
+
+    if (!tsl_id_cert_verify(otherId, caCert, NULL)) {
+      printf("[%s]: master key did not certified this key!\n", arg.c_str());
+    }
+    otherNodes[arg] = make_tuple(addr, port, otherId, 0/* xch_key */, 0);
+    printf("%s: addr = %s, port = %s, public key = %s\n",
+      arg.c_str(), addr.c_str(), port.c_str(), publKey.c_str());
   }
   return 0;
 }
@@ -94,25 +103,61 @@ void heartbeat(void *msg, size_t len, void(*respondWith)(void*,size_t), void(*wa
   char responseOk[] = "ok";
   char responseNOk[] = "not-ok";
   int cmp = 0, verify = 0;
+  tsl_identity_t *otherId;
+
   if (len != sizeof(envelope_s)) {
     printf("error, message size mismatch (got %zu B, expected %zu B)\n", sizeof(envelope_s), len);
     respondWith(responseNOk, sizeof(responseNOk));
     return;
   }
+
   memset(&response, 0, sizeof(response));
-  tsl_load_secret(get<2>(otherNodes[string(castMsg->msg.text)]));
-  tsl_load_publkey((char*)get<3>(otherNodes[string(castMsg->msg.text)]).c_str());
-  tsl_hmac(&(castMsg->msg), sizeof(msg_s), hmac, &size);
-  verify = tsl_verify(&(castMsg->signature), castMsg->signatureSize, &(castMsg->msg), sizeof(msg_s));
-  cmp = cmpHmacs((unsigned char*)castMsg->hmac, (unsigned char*)hmac);
-  printf("[%s:heartbeat]: \"%s\" (type = %i, hmac = %i, signature = %i)\n", id,
-    castMsg->msg.text, castMsg->msg.header.type, cmp, verify);
-  if (cmp) {
+  if (castMsg->msg.header.type == KEY_XCH)
+  {
+    // exchange key with node
+    string otherNode = string(castMsg->msg.from);
+    otherId = get<2>(otherNodes[otherNode]);
+
+    verify = tsl_id_verify(otherId, &(castMsg->signature),
+      castMsg->signatureSize, &(castMsg->msg), sizeof(msg_s));
+    if (!verify) {
+      printf("[ERROR]: signature failed!\n"); // TODO: abort program
+    }
+
+    auto tuple = otherNodes[otherNode];
+    otherNodes[string(castMsg->msg.from)] = make_tuple(get<0>(tuple), get<1>(tuple), get<2>(tuple), 1, get<4>(tuple));
+
+    tsl_id_deserialize_ec_pubkey(otherId, castMsg->msg.text, 2048);
+    tsl_id_gen_peer_secret(myId, otherId);
+    tsl_id_load_secret(otherId, NULL);
+
     memcpy(response.msg.text, responseOk, strlen(responseOk));
     response.msg.header.type = ACK;
-  } else {
-    memcpy(response.msg.text, responseNOk, strlen(responseNOk));
-    response.msg.header.type = NACK;
+    printf("[XCH]: got pub_key from %s!\n", otherNode.c_str());
+    // end of manage key
+  }
+  else
+  {
+    // normal heartbeat
+    string otherNode = string(castMsg->msg.from);
+    otherId = get<2>(otherNodes[otherNode]);
+     if (!get<3>(otherNodes[otherNode])) return;
+    // tsl_load_publkey((char*)get<3>(otherNodes[string(castMsg->msg.text)]).c_str());
+    tsl_id_hmac(otherId, &(castMsg->msg), sizeof(msg_s), hmac, &size);
+    verify = tsl_id_verify(otherId, &(castMsg->signature),
+      castMsg->signatureSize, &(castMsg->msg), sizeof(msg_s));
+    // tsl_verify(&(castMsg->signature), castMsg->signatureSize, &(castMsg->msg), sizeof(msg_s));
+    cmp = cmpHmacs((unsigned char*)castMsg->hmac, (unsigned char*)hmac);
+    printf("send_heartbeat_to \"%s\" (type = %i, hmac = %i, signature = %i)\n",
+      castMsg->msg.from, castMsg->msg.header.type, cmp, verify);
+    if (cmp) {
+      memcpy(response.msg.text, responseOk, strlen(responseOk));
+      response.msg.header.type = ACK;
+    } else {
+      memcpy(response.msg.text, responseNOk, strlen(responseNOk));
+      response.msg.header.type = NACK;
+    }
+    // end of heartbeat
   }
   respondWith((void*)&response, sizeof(response));
 }
@@ -145,30 +190,59 @@ void timer_handler(void *arg)
     }
     else if (connId == -3)
     {
-      // printf("can't connect, error on socket (maybe offline)\n");
+      // printf("can't connect %s, error on socket (maybe offline)\n", it->first.c_str());
+      otherNodes[it->first] = make_tuple(get<0>(it->second), get<1>(it->second), get<2>(it->second), get<3>(it->second), 0);
       continue;
     }
-    memset(&env, 0, sizeof(env));
-    memset(&respOk, 0, sizeof(respOk));
-    memcpy(env.msg.text, id, sizeof(id));
-    env.msg.header.type = HEARTBEAT;
-    tsl_load_secret(get<2>(otherNodes[it->first]));
-    tsl_load_secret(get<2>(otherNodes[it->first]));
-    tsl_hmac(&(env.msg), sizeof(msg_s), env.hmac, &size);
-    if (size > TSL_HASH_SIZE) printf("hmac buffer overflow!\n");
-    env.signatureSize = TSL_SIGNATURE_SIZE;
-    tsl_sign(&(env.msg), sizeof(msg_s), env.signature, &(env.signatureSize));
-    if (env.signatureSize > TSL_SIGNATURE_SIZE) printf("signature buffer overflow!\n");
 
-    // printf("connected (%i)!\n", connId);
-    tsl_send_msg(connId, (void*)&env, sizeof(envelope_s));
+    int xch_key = get<4>(it->second);
+    if (!xch_key)
+    {
+      otherNodes[it->first] = make_tuple(get<0>(it->second), get<1>(it->second), get<2>(it->second), get<3>(it->second), 1);
 
-    clock_gettime(CLOCK_MONOTONIC_RAW, &start);
-    tsl_recv_msg(connId, &respOk, &size); // TODO: check message
-    clock_gettime(CLOCK_MONOTONIC_RAW, &end);
-    durationMs = ((end.tv_sec * 1e9 + end.tv_nsec) - (start.tv_sec * 1e9 + start.tv_nsec)) / 1e6f;
-    printf("[%s] response from %s = \"%s\" (type = %i, lat = %.3fms)\n", id, it->first.c_str(),
-      respOk.msg.text, respOk.msg.header.type, durationMs);
+      memset(&env, 0, sizeof(env));
+      memset(&respOk, 0, sizeof(respOk));
+      memcpy(env.msg.from, id, sizeof(id));
+      memcpy(env.msg.text, exchangeKey, 2048);
+      env.msg.header.type = KEY_XCH;
+      env.signatureSize = TSL_SIGNATURE_SIZE;
+      tsl_id_sign(myId, &(env.msg), sizeof(msg_s), env.signature, &(env.signatureSize));
+      if (env.signatureSize > TSL_SIGNATURE_SIZE) printf("signature buffer overflow!\n");
+      tsl_send_msg(connId, (void*)&env, sizeof(envelope_s));
+
+
+      // clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+      // tsl_recv_msg(connId, &respOk, &size); // TODO: check message
+      // clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+    }
+    else
+    {
+      // waits key exchange
+
+      memset(&env, 0, sizeof(env));
+      memset(&respOk, 0, sizeof(respOk));
+      memcpy(env.msg.from, id, sizeof(id));
+      memcpy(env.msg.text, "ping", sizeof(id));
+      env.msg.header.type = HEARTBEAT;
+      tsl_identity_t *otherId = get<2>(otherNodes[it->first]);
+      tsl_id_hmac(otherId, &(env.msg), sizeof(msg_s), env.hmac, &size);
+      if (size > TSL_HASH_SIZE) {
+        printf("hmac buffer overflow (%s, size=%lu)!\n", tsl_last_error_msg, size);
+      }
+      env.signatureSize = TSL_SIGNATURE_SIZE;
+      tsl_id_sign(myId, &(env.msg), sizeof(msg_s), env.signature, &(env.signatureSize));
+      if (env.signatureSize > TSL_SIGNATURE_SIZE) printf("signature buffer overflow!\n");
+
+      // printf("connected (%i)!\n", connId);
+      clock_gettime(CLOCK_MONOTONIC_RAW, &start);
+      tsl_send_msg(connId, (void*)&env, sizeof(envelope_s));
+      tsl_recv_msg(connId, &respOk, &size); // TODO: check message
+      clock_gettime(CLOCK_MONOTONIC_RAW, &end);
+      durationMs = ((end.tv_sec * 1e9 + end.tv_nsec) - (start.tv_sec * 1e9 + start.tv_nsec)) / 1e6f;
+      printf("[%s] response from %s = \"%s\" (type = %i, lat = %.3fms)\n", id, it->first.c_str(),
+        respOk.msg.text, respOk.msg.header.type, durationMs);
+    }
+
   }
   tsl_close_all_connections();
   // sleep(5);
@@ -181,16 +255,18 @@ int main(int argc, char **argv)
   char inputKEY[] = "KEY";
   char inputPORT[] = "PORT";
   char inputID[] = "ID";
+  char inputMASTER[] = "MASTER_CERT";
 
   input_parse(argc, argv);
 
   if (!input_exists(inputKEY)) {
-    printf("use ID=nodeZ PORT=portXYZ KEY=<path_to_privkey> nodeX=addrX,portX,certkeyX nodeY=addrY,portY,certkeyY ...\n");
+    printf("use ID=nodeZ PORT=portXYZ KEY=<path_to_privkey> MASTER_CERT=<path_to_cert> nodeX=addrX,portX,certkeyX nodeY=addrY,portY,certkeyY ...\n");
     return EXIT_FAILURE;
   }
 
+  myId = tsl_alloc_identity();
   input_getString(inputKEY, privKey);
-  if (tsl_load_privkey(privKey)) {
+  if (tsl_load_identity(myId, privKey, NULL, NULL, NULL, NULL)) {
     printf("Error: %s\n", tsl_last_error_msg);
     return EXIT_FAILURE;
   }
@@ -200,6 +276,19 @@ int main(int argc, char **argv)
   if (input_exists(inputID)) {
     if (input_getString(inputID, id) > 64) printf("buffer overflow node ID name\n");
   }
+  caCert = tsl_alloc_identity();
+  input_getString(inputMASTER, masterCert);
+  if (tsl_load_identity(caCert, NULL, NULL, NULL, masterCert, NULL)) {
+    printf("Error: %s\n", tsl_last_error_msg);
+    return EXIT_FAILURE;
+  }
+  if (!tsl_id_cert_verify(myId, caCert, NULL)) {
+    printf("ERROR, master did not certify my key!\n");
+  }
+  // TODO: send a generated key on first contact
+  tsl_id_gen_ec_key(myId);
+  tsl_id_serialize_ec_pubkey(myId, exchangeKey, 2048);
+  printf("Gen key : \n%s", exchangeKey);
   input_foreach(handle_nodes); // do this only after the previous 3
 
   printf("%s listening on port %s\n", id, port);
