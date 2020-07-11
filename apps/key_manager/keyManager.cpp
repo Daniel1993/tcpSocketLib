@@ -53,7 +53,7 @@ int main(int argc, char **argv)
   snprintf_nowarn(publCsrFile,  BUFFER_SIZE, "%s/%s", dirPubl, "csr.pem"            );
 
   id = tsl_alloc_identity();
-  tsl_id_create_keys(id, fields);
+  tsl_id_create_keys(id, 1, fields);
 
   if (strcmp(operation, "CREATE_MASTER_KEY") == 0) {
     tsl_id_create_self_signed_cert(id, DAYS_VALID, fields);

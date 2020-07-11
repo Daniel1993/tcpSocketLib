@@ -36,37 +36,23 @@ LDFLAGS    := $(LIBS)
 LIB        := threading
 
 OBJS       :=       \
-	keyManager.o      \
-	heartbeat.o       \
+	clockServer.o       \
 #
 
 .PHONY:	all clean
 
-all: keyManager heartbeat
+all: keyManager clockServer
 	# Done
 
 # IMPORTANT: the order of the libraries matters
 keyManager: $(OBJS)
 	$(CXX) -o $@ $@.o $(LDFLAGS)
 
-heartbeat: $(OBJS)
+clockServer: $(OBJS)
 	$(CXX) -o $@ $@.o $(LDFLAGS)
 
 setup_keys: keyManager
-	mkdir -p master_key_publ master_key_priv \
-		node0_key_publ node0_key_priv \
-		node1_key_publ node1_key_priv \
-		node2_key_publ node2_key_priv \
-		node3_key_publ node3_key_priv \
-		node4_key_publ node4_key_priv \
-		node5_key_publ node5_key_priv
-	./keyManager OPERATION=CREATE_MASTER_KEY DIR_PUBL=./master_key_publ DIR_PRIV=./master_key_priv
-	./keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node0_key_publ DIR_PRIV=./node0_key_priv
-	./keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node1_key_publ DIR_PRIV=./node1_key_priv
-	./keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node2_key_publ DIR_PRIV=./node2_key_priv
-	./keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node3_key_publ DIR_PRIV=./node3_key_priv
-	./keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node4_key_publ DIR_PRIV=./node4_key_priv
-	./keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node5_key_publ DIR_PRIV=./node5_key_priv
+	$(MAKE) -C ../key_manager
 
 ### TODO: send only the public keys
 rsync_keys: setup_keys
@@ -76,48 +62,48 @@ rsync_keys: setup_keys
 	rsync -avz $(PWD)/. $(NODE3_ADDR):$(PWD)
 	rsync -avz $(PWD)/. $(NODE4_ADDR):$(PWD)
 
-start_node0: heartbeat
-	./heartbeat ID=node0 PORT=16120 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node0_key_priv/priv_key.pem \
+start_node0: clockServer
+	./clockServer ID=node0 PORT=16120 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node0_key_priv/priv_key.pem \
 		node1=$(NODE1_ADDR),16121,./node1_key_publ/publ_key.pem \
 		node2=$(NODE2_ADDR),16122,./node2_key_publ/publ_key.pem \
 		node3=$(NODE3_ADDR),16123,./node3_key_publ/publ_key.pem \
 		node4=$(NODE4_ADDR),16124,./node4_key_publ/publ_key.pem \
 		node5=$(NODE5_ADDR),16125,./node5_key_publ/publ_key.pem
 
-start_node1: heartbeat
-	./heartbeat ID=node1 PORT=16121 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node1_key_priv/priv_key.pem \
+start_node1: clockServer
+	./clockServer ID=node1 PORT=16121 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node1_key_priv/priv_key.pem \
 		node0=$(NODE0_ADDR),16120,./node0_key_publ/publ_key.pem \
 		node2=$(NODE2_ADDR),16122,./node2_key_publ/publ_key.pem \
 		node3=$(NODE3_ADDR),16123,./node3_key_publ/publ_key.pem \
 		node4=$(NODE4_ADDR),16124,./node4_key_publ/publ_key.pem \
 		node5=$(NODE5_ADDR),16125,./node5_key_publ/publ_key.pem
 
-start_node2: heartbeat
-	./heartbeat ID=node2 PORT=16122 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node2_key_priv/priv_key.pem \
+start_node2: clockServer
+	./clockServer ID=node2 PORT=16122 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node2_key_priv/priv_key.pem \
 		node0=$(NODE0_ADDR),16120,./node0_key_publ/publ_key.pem \
 		node1=$(NODE1_ADDR),16121,./node1_key_publ/publ_key.pem \
 		node3=$(NODE3_ADDR),16123,./node3_key_publ/publ_key.pem \
 		node4=$(NODE4_ADDR),16124,./node4_key_publ/publ_key.pem \
 		node5=$(NODE5_ADDR),16125,./node5_key_publ/publ_key.pem
 
-start_node3: heartbeat
-	./heartbeat ID=node3 PORT=16123 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node3_key_priv/priv_key.pem \
+start_node3: clockServer
+	./clockServer ID=node3 PORT=16123 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node3_key_priv/priv_key.pem \
 		node0=$(NODE0_ADDR),16120,./node0_key_publ/publ_key.pem \
 		node1=$(NODE1_ADDR),16121,./node1_key_publ/publ_key.pem \
 		node2=$(NODE2_ADDR),16122,./node2_key_publ/publ_key.pem \
 		node4=$(NODE4_ADDR),16124,./node4_key_publ/publ_key.pem \
 		node5=$(NODE5_ADDR),16125,./node5_key_publ/publ_key.pem
 
-start_node4: heartbeat
-	./heartbeat ID=node4 PORT=16124 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node4_key_priv/priv_key.pem \
+start_node4: clockServer
+	./clockServer ID=node4 PORT=16124 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node4_key_priv/priv_key.pem \
 		node0=$(NODE0_ADDR),16120,./node0_key_publ/publ_key.pem \
 		node1=$(NODE1_ADDR),16121,./node1_key_publ/publ_key.pem \
 		node2=$(NODE2_ADDR),16122,./node2_key_publ/publ_key.pem \
 		node3=$(NODE3_ADDR),16123,./node3_key_publ/publ_key.pem \
 		node5=$(NODE5_ADDR),16125,./node5_key_publ/publ_key.pem
 
-start_node5: heartbeat
-	./heartbeat ID=node5 PORT=16125 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node5_key_priv/priv_key.pem \
+start_node5: clockServer
+	./clockServer ID=node5 PORT=16125 MASTER_CERT=./master_key_publ/cert_publ_key.pem KEY=./node5_key_priv/priv_key.pem \
 		node0=$(NODE0_ADDR),16120,./node0_key_publ/publ_key.pem \
 		node1=$(NODE1_ADDR),16121,./node1_key_publ/publ_key.pem \
 		node2=$(NODE2_ADDR),16122,./node2_key_publ/publ_key.pem \
@@ -134,4 +120,4 @@ run:
 	make all
 
 clean:
-	rm -fr *.o keyManager heartbeat *_key_priv *_key_publ 
+	rm -fr *.o clockServer *_key_priv *_key_publ 

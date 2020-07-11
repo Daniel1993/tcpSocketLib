@@ -10,7 +10,9 @@
 #include <ctype.h>
 #include <string.h>
 
-#define ECC_CURVE            NID_secp521r1
+#define ECC_CURVE_SMALL      NID_secp128r1
+#define ECC_CURVE_MEDIUM     NID_secp192k1
+#define ECC_CURVE_LARGE      NID_secp384r1
 #define HASH_TYPE            EVP_sha512()
 #define HASH_SIZE            SHA512_DIGEST_LENGTH
 #define SIGN_TYPE            HASH_TYPE
@@ -84,11 +86,15 @@ void tsl_free_identity(tsl_identity_t *identity)
 
 int tsl_id_destroy_keys(tsl_identity_t *identity)
 {
-  if (identity->privKey)   EVP_PKEY_free(identity->privKey);
-  if (identity->publKey)   EVP_PKEY_free(identity->publKey);
-  if (identity->csr)       X509_REQ_free(identity->csr);
-  if (identity->ca)        X509_free(identity->ca);
   if (identity->cert)      X509_free(identity->cert);
+  if (identity->ca)        X509_free(identity->ca);
+  if (identity->csr)       X509_REQ_free(identity->csr);
+  if (identity->privKey && (void*)EVP_PKEY_get1_EC_KEY(identity->privKey) == (void*)identity->publKey) {
+    EVP_PKEY_free(identity->privKey);
+  } else {
+    if (identity->publKey)   EVP_PKEY_free(identity->publKey);
+    if (identity->privKey)   EVP_PKEY_free(identity->privKey);
+  }
   if (identity->ecc_secret)   OPENSSL_free(identity->ecc_secret);
   if (identity->ecc_secretIV) OPENSSL_free(identity->ecc_secretIV);
   if (identity->secret)       OPENSSL_free(identity->secret);
@@ -175,64 +181,76 @@ int tsl_load_identity(
   const char *ca
 ) {
   FILE *priv_key_fp, *publ_key_fp, *cert_req_fp, *cert_fp, *ca_fp;
+  int ret = 0;
+
   INIT_ERROR_CHECK();
 
   if (priv_key) {
     if ((priv_key_fp = fopen(priv_key, "rb")) == NULL) {
       TSL_ADD_ERROR("[%s:%i] %s", __FILE__, __LINE__, strerror(errno));
-      return -1;
+      ret = 1;
+      goto after_priv_key;
     }
     // TODO: passphrase
     ERROR_CHECK((identity->privKey = PEM_read_PrivateKey(priv_key_fp, NULL, NULL, NULL)),
       { fclose(priv_key_fp); return -1; });
     fclose(priv_key_fp);
   }
+after_priv_key:
   
   if (publ_key) {
     if ((publ_key_fp = fopen(publ_key, "rb")) == NULL) {
       TSL_ADD_ERROR("[%s:%i] %s", __FILE__, __LINE__, strerror(errno));
-      return -1;
+      ret |= (1 << 1);
+      goto after_publ_key;
     }
 
     ERROR_CHECK(identity->publKey = PEM_read_PUBKEY(publ_key_fp, NULL, NULL, NULL), 
       { fclose(publ_key_fp); return -1; });
     fclose(publ_key_fp);
   }
+after_publ_key:
 
   if (cert_req) {
     if ((cert_req_fp = fopen(cert_req, "rb")) == NULL) {
       TSL_ADD_ERROR("[%s:%i] %s", __FILE__, __LINE__, strerror(errno));
-      return -1;
+      ret |= (1 << 2);
+      goto after_cert_req;
     }
     ERROR_CHECK(identity->csr = PEM_read_X509_REQ(cert_req_fp, NULL, NULL, NULL),
       { fclose(cert_req_fp); return -1; });
     fclose(cert_req_fp);
   }
+after_cert_req:
 
   if (cert) {
     if ((cert_fp = fopen(cert, "rb")) == NULL) {
       TSL_ADD_ERROR("[%s:%i] %s", __FILE__, __LINE__, strerror(errno));
-      return -1;
+      ret |= (1 << 3);
+      goto after_cert;
     }
     ERROR_CHECK(identity->cert = PEM_read_X509(cert_fp, NULL, NULL, NULL),
       { fclose(cert_fp); return -1; });
     fclose(cert_fp);
   }
+after_cert:
 
   if (ca) {
     if ((ca_fp = fopen(ca, "rb")) == NULL) {
       TSL_ADD_ERROR("[%s:%i] %s", __FILE__, __LINE__, strerror(errno));
-      return -1;
+      ret |= (1 << 4);
+      goto after_ca;
     }
     ERROR_CHECK(identity->ca = PEM_read_X509(ca_fp, NULL, NULL, NULL),
       { fclose(ca_fp); return -1; });
     fclose(ca_fp);
   }
+after_ca:
 
-  return 0;
+  return ret;
 }
 
-int tsl_id_create_keys(tsl_identity_t *identity, tsl_csr_fields_t fields)
+int tsl_id_create_keys(tsl_identity_t *identity, int secStrength, tsl_csr_fields_t fields)
 {
   int res = -1;
   EC_KEY *ecc;
@@ -240,7 +258,13 @@ int tsl_id_create_keys(tsl_identity_t *identity, tsl_csr_fields_t fields)
   X509_NAME *x509_name;
   INIT_ERROR_CHECK();
 
-  ecc = EC_KEY_new_by_curve_name(ECC_CURVE);
+  if (secStrength <= 1) {
+    ecc = EC_KEY_new_by_curve_name(ECC_CURVE_SMALL);
+  } else if (secStrength == 2) {
+    ecc = EC_KEY_new_by_curve_name(ECC_CURVE_MEDIUM);
+  } else {
+    ecc = EC_KEY_new_by_curve_name(ECC_CURVE_LARGE);
+  }
   EC_KEY_set_asn1_flag(ecc, OPENSSL_EC_NAMED_CURVE);
 
   ERROR_CHECK(EC_KEY_generate_key(ecc), { goto ret; });
@@ -328,7 +352,7 @@ int tsl_id_create_self_signed_cert(tsl_identity_t *identity, long daysValid, tsl
   X509_set_issuer_name(identity->cert, name);
   // TODO: set isCA:TRUE flag
 
-  X509_set_pubkey(identity->cert, identity->privKey);
+  X509_set_pubkey(identity->cert, identity->publKey);
   
   /* Actually sign the certificate with our key. */
   ERROR_CHECK(X509_sign(identity->cert, identity->privKey, SIGN_TYPE), { return -1; });
@@ -443,7 +467,7 @@ int tsl_id_gen_ec_key(tsl_identity_t *id)
   INIT_ERROR_CHECK();
 
   new_key = tsl_alloc_identity();
-  tsl_id_create_keys(new_key, (tsl_csr_fields_t){});
+  tsl_id_create_keys(new_key, 1, (tsl_csr_fields_t){});
   if (new_key->csr) {
     X509_REQ_free(new_key->csr);
   }
@@ -464,11 +488,11 @@ ret:
   return res;
 }
 
-int tsl_id_serialize_ec_pubkey(tsl_identity_t *id, void *buffer, size_t size)
+long tsl_id_serialize_ec_pubkey(tsl_identity_t *id, void *buffer, size_t size)
 {
   BIO *bo = NULL;
   EC_KEY *key = id->ecc_gen_key1;
-  int ret = -1;
+  long ret = -1;
   char *data;
   long dataLen;
   INIT_ERROR_CHECK();
@@ -486,6 +510,7 @@ int tsl_id_serialize_ec_pubkey(tsl_identity_t *id, void *buffer, size_t size)
   }
   memcpy(buffer, data, dataLen);
 
+  ret = dataLen;
 ret:
   BIO_free_all(bo);
   return ret;

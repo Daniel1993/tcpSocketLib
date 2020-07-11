@@ -61,8 +61,8 @@ int main (int argc, char **argv)
     .email = "subject@com.pt"
   };
 
-  tsl_id_create_keys(id1, fields);
-  tsl_id_create_keys(id2, fields);
+  tsl_id_create_keys(id1, 1, fields);
+  tsl_id_create_keys(id2, 1, fields);
 
   tsl_id_create_self_signed_cert(id1, 500, (tsl_csr_fields_t){
     .country = "PT",
@@ -124,7 +124,7 @@ int main (int argc, char **argv)
 
   // -------------------------------
   // creates a new key and uses the previous as peer-key
-  tsl_id_create_keys(id2, (tsl_csr_fields_t){
+  tsl_id_create_keys(id2, 1, (tsl_csr_fields_t){
     .country = "PT",
     .state = "PT",
     .locality = "Lisbon",

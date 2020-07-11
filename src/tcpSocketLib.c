@@ -13,6 +13,7 @@
 #include <stdint.h>
 #include <openssl/ssl.h>
 
+__thread int tsl_last_error_flag;
 __thread char tsl_last_error_msg[1024];
 
 typedef struct buffer_t {
@@ -87,12 +88,12 @@ static void server(int id, int nbThreads, void *arg)
     .sin_addr = { .s_addr = htonl(INADDR_ANY) }
   }, cli;
   const struct sockaddr_in servaddr_read;
-  socklen_t len;
+  socklen_t len = sizeof(struct sockaddr);
   INIT_ERROR_CHECK();
 
   ERROR_CHECK((socketfd = socket(AF_INET, SOCK_STREAM, 0)), { goto ret; });
   ERROR_CHECK(bind(socketfd, (struct sockaddr*)&servaddr, sizeof(servaddr)), { goto ret; });
-  ERROR_CHECK(getsockname(socketfd, &servaddr_read, sizeof(servaddr_read)), { goto ret; });
+  ERROR_CHECK(getsockname(socketfd, (struct sockaddr*)&servaddr_read, &len), { goto ret; });
   sprintf(serverPort, "%ui", ntohs(servaddr_read.sin_port));
   ERROR_CHECK(listen(socketfd, TSL_MSG_QUEUE_SIZE), { goto ret; });
 

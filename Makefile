@@ -1,6 +1,7 @@
 OBJS     := \
 	src/tcpSocketLib.o \
 	src/sslUtility.o \
+	src/tcpServer.o \
 #
 
 LIBS     := \

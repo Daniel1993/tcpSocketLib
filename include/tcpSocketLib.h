@@ -34,7 +34,7 @@ typedef struct tsl_identity_t tsl_identity_t;
 
 typedef void(*tsl_handler_t)(void*,size_t,void(*respondWith)(void*,size_t),void(*waitResponse)(void*, size_t*)); 
 
-// if isServerSet returns -2
+// if isServerSet returns -2 server is already running
 int tsl_init(char *port); // port == NULL --> any port
 int tsl_check_port(); // returns the port the server is bind to
 int tsl_destroy();
@@ -57,6 +57,8 @@ int tsl_add_handler(tsl_handler_t);
 
 tsl_identity_t *tsl_alloc_identity();
 void tsl_free_identity(tsl_identity_t *identity);
+
+// return -1 for error
 int tsl_store_identity(
   tsl_identity_t *identity,
   const char *priv_key,
@@ -65,6 +67,13 @@ int tsl_store_identity(
   const char *cert,
   const char *ca
 );
+
+// return -1 for error, 0 no error,
+// 1 could not open priv (can be in any bit combination)
+// 2 could not open publ
+// 4 could not open csr
+// 8 could not open cert
+// 16 could not open ca
 int tsl_load_identity(
   tsl_identity_t *identity,
   const char *priv_key,
@@ -73,7 +82,11 @@ int tsl_load_identity(
   const char *cert,
   const char *ca
 );
-int tsl_id_create_keys(tsl_identity_t *identity, tsl_csr_fields_t fields);
+int tsl_id_create_keys(
+  tsl_identity_t *identity,
+  int secStrength /* 1 - weakest, 3 - strongest */,
+  tsl_csr_fields_t fields
+);
 int tsl_id_destroy_keys(tsl_identity_t *identity);
 int tsl_id_cert_get_issuer(tsl_identity_t*, tsl_csr_fields_t*); // load first
 int tsl_id_cert_get_subject(tsl_identity_t*, tsl_csr_fields_t*); // load first
@@ -101,8 +114,8 @@ int tsl_id_verify(
 
 // generates ephemeral key
 int tsl_id_gen_ec_key(tsl_identity_t *id);
-// serializes the ephemeral (public) key, after this, send the buffer to the peer
-int tsl_id_serialize_ec_pubkey(tsl_identity_t *id, void *buffer, size_t size);
+// serializes the ephemeral (public) key, after this, send the buffer to the peer, returns space taken
+long tsl_id_serialize_ec_pubkey(tsl_identity_t *id, void *buffer, size_t size);
 // deserialize ephemeral key from peer
 int tsl_id_deserialize_ec_pubkey(tsl_identity_t *peer, void *buffer, size_t size); // pass &eckey, where eckey is void* = NULL
 // after generated and received the ephemeral keys, creates a secret
