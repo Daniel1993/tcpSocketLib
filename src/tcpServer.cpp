@@ -2,6 +2,7 @@
 #include "../deps/threading/src/util.h"
 #include <stdint.h>
 #include <errno.h>
+#include <string.h>
 #include <limits>
 
 #define FIRST_ALLOC_SIZE 4096
@@ -92,7 +93,7 @@ int tcpsrv::Message::Sign(tsl_identity_t *id)
   unsigned char buffer[FIRST_ALLOC_SIZE];
   size_t size;
   tsl_id_sign(id, _buffer, _buffer_size, buffer, &size);
-  if (header->header_size + size > _alloc_header_size) {
+  if (header->header_size + (uint32_t)size > (uint32_t)_alloc_header_size) {
     _alloc_header_size <<= 1;
     realloc_or_die(_header, _alloc_header_size);
     header = (msg_header_t*)_header;
@@ -132,7 +133,7 @@ int tcpsrv::Message::HmacSign(tsl_identity_t *id)
   unsigned char buffer[FIRST_ALLOC_SIZE];
   size_t size;
   tsl_id_hmac(id, _buffer, _buffer_size, buffer, &size);
-  if (header->header_size + size > _alloc_header_size) {
+  if (header->header_size + (uint32_t)size > (uint32_t)_alloc_header_size) {
     _alloc_header_size <<= 1;
     realloc_or_die(_header, _alloc_header_size);
     header = (msg_header_t*)_header;

@@ -84,7 +84,7 @@ public:
     { tsl_id_create_keys(_id, 1, (tsl_csr_fields_t){}); };
   ~IEntity() { if (_id) { tsl_free_identity(_id); } } ;
 
-  std::string SetLocalKeys(std::string localKeys) { _localKeys = localKeys; }
+  void SetLocalKeys(std::string localKeys) { _localKeys = localKeys; }
   std::string GetName() { return _name; }
   std::string GetAddr() { return _addr; }
   int GetPort() { return _port; }
