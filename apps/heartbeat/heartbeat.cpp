@@ -13,6 +13,7 @@
 #include <unistd.h>
 
 using namespace std;
+using namespace tcpsrv;
 
 static char port[16] = "16123";
 static char id[64] = "node1";
@@ -20,8 +21,8 @@ static char masterCert[1024];
 static char privKey[1024];
 static char exchangeKey[2048];
 static map<string,int> secrets;
-static map<string,tuple<string, string, tsl_identity_t*, int, int>> otherNodes;
-tcpsrv::Entity *myId;
+static map<string, tuple<string, string, RemoteEntity, int, int>> otherNodes;
+Entity *myId;
 tsl_identity_t *caCert;
 
 typedef enum { HEARTBEAT = 1, ACK, NACK, KEY_XCH } MSG_TYPE;
@@ -76,25 +77,22 @@ int handle_nodes(const char *inputArg)
     if (value.length() == 0) return 0;
     publKey = value;
 
-    tsl_identity_t *otherId = tsl_alloc_identity();
-    tsl_load_identity(otherId, NULL, publKey.c_str(), NULL, NULL, masterCert);
-    if (!tsl_id_cert_verify(otherId, caCert, NULL)) {
+    Entity entity(arg, addr, atoi(port.c_str()));
+
+    entity.SetLocalKeys(publKey);
+    entity.LoadId();
+    if (!entity.VerifyId(masterCert)) {
       printf("[ERROR]: verification of %s cert failed\n", arg.c_str());
     }
-
-    // tsl_id_gen_ec_key(otherId); // need to serl, send, deserl...
-
-    if (!tsl_id_cert_verify(otherId, caCert, NULL)) {
-      printf("[%s]: master key did not certified this key!\n", arg.c_str());
-    }
-    otherNodes[arg] = make_tuple(addr, port, otherId, 0/* xch_key */, 0);
+    
+    otherNodes[arg] = make_tuple(addr, port, entity, 0 /* xch_key */, 0);
     printf("%s: addr = %s, port = %s, public key = %s\n",
       arg.c_str(), addr.c_str(), port.c_str(), publKey.c_str());
   }
   return 0;
 }
 
-void exchangeKeyCallback(tcpsrv::Message msg)
+void exchangeKeyCallback(Message msg)
 {
   envelope_s response;
   long size;
@@ -103,11 +101,11 @@ void exchangeKeyCallback(tcpsrv::Message msg)
   char responseOk[] = "ok";
   char responseNOk[] = "not-ok";
   int cmp = 0, verify = 0;
-  tsl_identity_t *otherId;
+  RemoteEntity otherId;
 
   if (size != sizeof(envelope_s)) {
     printf("error, message size mismatch (got %zu B, expected %zu B)\n", sizeof(envelope_s), size);
-    tcpsrv::Message resp((unsigned char*)responseNOk, (size_t)sizeof(responseNOk));
+    Message resp((unsigned char*)responseNOk, (size_t)sizeof(responseNOk));
     msg.RespondWith(resp);
     return;
   }
@@ -116,8 +114,7 @@ void exchangeKeyCallback(tcpsrv::Message msg)
   string otherNode = string(castMsg->msg.from);
   otherId = get<2>(otherNodes[otherNode]);
 
-  verify = tsl_id_verify(otherId, &(castMsg->signature),
-    castMsg->signatureSize, &(castMsg->msg), sizeof(msg_s));
+  verify = otherId.VerifyMsg(msg);
   if (!verify) {
     printf("[ERROR]: signature failed!\n"); // TODO: abort program
   }
@@ -125,19 +122,25 @@ void exchangeKeyCallback(tcpsrv::Message msg)
   auto tuple = otherNodes[otherNode];
   otherNodes[string(castMsg->msg.from)] = make_tuple(get<0>(tuple), get<1>(tuple), get<2>(tuple), 1, get<4>(tuple));
 
-  tsl_id_deserialize_ec_pubkey(otherId, castMsg->msg.text, 2048);
-  tsl_id_gen_peer_secret(myId, otherId);
-  tsl_id_load_secret(otherId, NULL);
+  RemoteEntity otherKey();
+  otherId.DeserlKey(castMsg->msg.text, 2048);
+  otherId.PairWithKey(otherKey.GetId());
 
   memcpy(response.msg.text, responseOk, strlen(responseOk));
   response.msg.header.type = ACK;
+
+  Message resp((unsigned char*)&response, sizeof(envelope_s));
+
+  msg.RespondWith(resp);
+
   printf("[XCH]: got pub_key from %s!\n", otherNode.c_str());
   // end of manage key
 }
 
-void heartbeatCallback(tcpsrv::Message msg)
+void heartbeatCallback(Message msg)
 {
   // normal heartbeat
+  envelope_s *castMsg = (envelope_s *)msg.GetContents(size);
   string otherNode = string(castMsg->msg.from);
   otherId = get<2>(otherNodes[otherNode]);
     if (!get<3>(otherNodes[otherNode])) return;
@@ -337,13 +340,14 @@ int main(int argc, char **argv)
     if (input_getString(inputID, id) > 64) printf("buffer overflow node ID name\n");
   }
 
-  myId = new tcpsrv::Entity();
+  myId = new Entity();
   myId->SetLocalKeys(privKey);
   myId->LoadId();
 
-  tcpsrv::Server server(myId, atoi(port));
+  Server server(myId, atoi(port));
 
-  server.AddCallback()
+  server.AddCallback(0, exchangeKeyCallback);
+  server.AddCallback(1, heartbeatCallback);
 
   if (tsl_load_identity(myId, privKey, NULL, NULL, NULL, NULL)) {
     printf("Error: %s\n", tsl_last_error_msg);
