@@ -1,8 +1,8 @@
 INCLUDES := -I ../include -I ../deps/threading/include -I ../deps/input_handler/include
 #
 DEFINES  :=
-# NOTE: tcpSocket must come first! order matters!
-LIBS     := -L .. -l tcpSocket -L ../deps/threading -l threading -L /usr/local/opt/openssl/lib \
+# NOTE: TCP_SSL_helper must come first! order matters!
+LIBS     := -L .. -l TCP_SSL_helper -L ../deps/threading -l threading -L /usr/local/opt/openssl/lib \
 	-L ../deps/input_handler -l input_handler -l ssl -l crypto -lpthread -lm 
 
 #

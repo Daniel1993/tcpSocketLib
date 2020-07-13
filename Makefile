@@ -21,14 +21,14 @@ ifeq ($(DEBUG),1)
 DEFS     += -g
 endif
 
-LIB      := tcpSocket
+LIB      := TCP_SSL_helper
 
 CFLAGS   := -c $(DEFS) $(INCS)
 CXXFLAGS := -c $(DEFS) $(INCS)
 
 LDFLAGS  := -L . -l $(LIB) $(LIBS)
 
-all: deps lib$(LIB).a test/test test/test_ssl
+all: test/test test/test_ssl
 	cd ./deps/threading     && $(MAKE) 
 	cd ./deps/input_handler && $(MAKE) 
 	# DONE
@@ -41,14 +41,14 @@ threading:
 input_handler:
 	cd ./deps/input_handler && $(MAKE)
 
-lib$(LIB).a: $(OBJS)
+lib$(LIB).a: deps $(OBJS)
 	@echo "Linking..."
 	$(AR) $@ $(OBJS)
 
-test/test: test/test.o
+test/test: lib$(LIB).a test/test.o
 	$(CXX) $^ $(LDFLAGS) -o $@
 
-test/test_ssl: test/test_ssl.o
+test/test_ssl: lib$(LIB).a test/test_ssl.o
 	$(CXX) $^ $(LDFLAGS) -o $@
 
 %.o:	%.c
