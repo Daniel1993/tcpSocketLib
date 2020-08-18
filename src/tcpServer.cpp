@@ -265,7 +265,7 @@ int tcpsrv::Entity::CreateId(tsl_identity_t *ca, int secStrength)
   );
 }
 
-int tcpsrv::Entity::LoadId()
+int tcpsrv::IEntity::LoadId()
 {
   std::string location = _localKeys;
 

@@ -79,22 +79,29 @@ public:
     { tsl_id_deserialize_ec_pubkey(_id, buffer, len); };
   IEntity(const IEntity &e) : _name(e._name), _addr(e._addr), _port(e._port), _id(e._id)
     { };
-  IEntity(std::string name, std::string addr, int port) :
+  IEntity(std::string &name, std::string &addr, int port = 0) :
     _name(name), _addr(addr), _port(port), _id(NULL)
     { tsl_id_create_keys(_id, 1, (tsl_csr_fields_t){}); };
   ~IEntity() { if (_id) { tsl_free_identity(_id); } } ;
 
   void SetLocalKeys(std::string localKeys) { _localKeys = localKeys; }
+  tsl_identity_t *GetId() { return _id; };
   std::string GetName() { return _name; }
   std::string GetAddr() { return _addr; }
   int GetPort() { return _port; }
-  tsl_identity_t *GetId() { return _id; }
   void SerlKey(void *buffer, size_t *len)
   {
     tsl_last_error_flag = 0;
     *len = tsl_id_serialize_ec_pubkey(_id, buffer, *len);
     if (tsl_last_error_flag) throw TSLError();
   }
+  void DeserlKey(void *buffer, size_t len)
+  {
+    if (tsl_id_deserialize_ec_pubkey(_id, buffer, len))
+      throw TSLError();
+  }
+  // keys must be in LOCAL_KEYS/_name.*
+  int LoadId();
 
 protected:
   std::string _localKeys; // = "local_keys/";
@@ -110,9 +117,6 @@ public:
   int CreateId(int secStrength); // self signed cert
   int CreateId(tsl_identity_t *ca, int secStrength); // certifies the key (must be the CA)
   int VerifyId(const char *ca_cert_path);
-
-  // keys must be in LOCAL_KEYS/_name.*
-  int LoadId();
 };
 
 class RemoteEntity : public IEntity
