@@ -1,8 +1,8 @@
 INCLUDES := -I ../../include -I ../../deps/threading/include -I ../../deps/input_handler/include
 #
 DEFINES  :=
-# NOTE: tcpSocket must come first! order matters!
-LIBS     := -L ../.. -l tcpSocket -L ../../deps/threading -l threading -L /usr/local/opt/openssl/lib \
+# NOTE: TCP_SSL_helper must come first! order matters!
+LIBS     := -L ../.. -l TCP_SSL_helper -L ../../deps/threading -l threading -L /usr/local/opt/openssl/lib \
 	-L ../../deps/input_handler -l input_handler -l ssl -l crypto -lpthread -lm 
 
 #
@@ -59,13 +59,13 @@ setup_keys: keyManager
 		node3_key_publ node3_key_priv \
 		node4_key_publ node4_key_priv \
 		node5_key_publ node5_key_priv
-	../key_manager/keyManager OPERATION=CREATE_MASTER_KEY DIR_PUBL=./master_key_publ DIR_PRIV=./master_key_priv
-	../key_manager/keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node0_key_publ DIR_PRIV=./node0_key_priv
-	../key_manager/keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node1_key_publ DIR_PRIV=./node1_key_priv
-	../key_manager/keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node2_key_publ DIR_PRIV=./node2_key_priv
-	../key_manager/keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node3_key_publ DIR_PRIV=./node3_key_priv
-	../key_manager/keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node4_key_publ DIR_PRIV=./node4_key_priv
-	../key_manager/keyManager OPERATION=CREATE_KEY MASTER_KEY=./master_key_priv/priv_key.pem DIR_PUBL=./node5_key_publ DIR_PRIV=./node5_key_priv
+	../key_manager/keyManager OPERATION=CREATE_MASTER_KEY NAME=master
+	../key_manager/keyManager OPERATION=CREATE_KEY NAME=node0
+	../key_manager/keyManager OPERATION=CREATE_KEY NAME=node1
+	../key_manager/keyManager OPERATION=CREATE_KEY NAME=node2
+	../key_manager/keyManager OPERATION=CREATE_KEY NAME=node3
+	../key_manager/keyManager OPERATION=CREATE_KEY NAME=node4
+	../key_manager/keyManager OPERATION=CREATE_KEY NAME=node5
 
 ### TODO: send only the public keys
 rsync_keys: setup_keys

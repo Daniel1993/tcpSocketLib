@@ -13,7 +13,7 @@
 #include <stdint.h>
 #include <openssl/ssl.h>
 
-__thread int tsl_last_error_flag;
+__thread int tsl_err_flag;
 __thread char tsl_last_error_msg[1024];
 
 typedef struct buffer_t {

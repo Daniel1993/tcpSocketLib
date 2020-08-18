@@ -1,6 +1,7 @@
 deps/input_handler/main
 apps/heartbeat/heartbeat
 apps/heartbeat/*_key_*
+apps/key_manager/*_key_*
 apps/key_manager/keyManager
 apps/clock_server/clockServer
 apps/*.o

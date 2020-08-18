@@ -73,57 +73,107 @@ private:
 class IEntity
 {
 public:
-  IEntity() : _localKeys("local_keys/"), _name("local"), _addr("localhost"), _port(-1), _id(tsl_alloc_identity())
-    { tsl_id_create_keys(_id, 1, (tsl_csr_fields_t){}); };
-  IEntity(void *buffer, size_t len) : _name("local"), _addr("localhost"), _port(-1), _id(tsl_alloc_identity())
-    { tsl_id_deserialize_ec_pubkey(_id, buffer, len); };
-  IEntity(const IEntity &e) : _name(e._name), _addr(e._addr), _port(e._port), _id(e._id)
-    { };
-  IEntity(std::string &name, std::string &addr, int port = 0) :
-    _name(name), _addr(addr), _port(port), _id(NULL)
-    { tsl_id_create_keys(_id, 1, (tsl_csr_fields_t){}); };
-  ~IEntity() { if (_id) { tsl_free_identity(_id); } } ;
+  IEntity() :
+    _name("local"),
+    _localPrivKeys(_name + "_key_priv/"),
+    _localPublKeys(_name + "_key_publ/"),
+    _addr("localhost"),
+    _port(-1),
+    _id(tsl_alloc_identity())
+    { memset((void*)&_iss, 0, sizeof(_iss)); memset((void*)&_sub, 0, sizeof(_sub)); };
 
-  void SetLocalKeys(std::string localKeys) { _localKeys = localKeys; }
-  tsl_identity_t *GetId() { return _id; };
+  IEntity(const IEntity &e) :
+    _name(e._name),
+    _localPrivKeys(e._localPrivKeys),
+    _localPublKeys(e._localPublKeys),
+    _addr(e._addr),
+    _port(e._port),
+    _id(tsl_alloc_identity()) // does not copy
+    { memcpy((void*)&_iss, (void*)&e._iss, sizeof(_iss)); memcpy((void*)&_sub, (void*)&e._sub, sizeof(_sub)); };
+
+  IEntity(void *buffer, size_t len) : IEntity()
+    { tsl_id_deserialize_ec_pubkey(_id, buffer, len); };
+
+  IEntity(std::string name) : IEntity()
+    { _name = name; _localPrivKeys = _name + "_key_priv/"; _localPublKeys = _name + "_key_publ/"; };
+
+  IEntity(std::string name, std::string addr, int port) : IEntity(name)
+    { _addr = addr; _port = port; };
+
+  ~IEntity() { if (_id) { tsl_free_identity(_id); _id = NULL; } } ;
+
+  void SetLocalPrivKeys(std::string localPrivKeys) { _localPrivKeys = localPrivKeys; }
+  void SetLocalPublKeys(std::string localPublKeys) { _localPublKeys = localPublKeys; }
+
   std::string GetName() { return _name; }
   std::string GetAddr() { return _addr; }
   int GetPort() { return _port; }
-  void SerlKey(void *buffer, size_t *len)
-  {
-    tsl_last_error_flag = 0;
-    *len = tsl_id_serialize_ec_pubkey(_id, buffer, *len);
-    if (tsl_last_error_flag) throw TSLError();
-  }
+
+  tsl_identity_t *GetId() { return _id; }
+  void SerlKey(void *buf, size_t *l)
+    { tsl_err_flag = 0; *l = tsl_id_serialize_ec_pubkey(_id, buf, *l); if (tsl_err_flag) throw TSLError(); }
   void DeserlKey(void *buffer, size_t len)
-  {
-    if (tsl_id_deserialize_ec_pubkey(_id, buffer, len))
-      throw TSLError();
-  }
-  // keys must be in LOCAL_KEYS/_name.*
+    { if (tsl_id_deserialize_ec_pubkey(_id, buffer, len)) throw TSLError(); }
+
+  void SetIssuerCountry(std::string c)      { memcpy(_iss.country,    (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+  void SetIssuerState(std::string c)        { memcpy(_iss.state,      (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+  void SetIssuerLocal(std::string c)        { memcpy(_iss.locality,   (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+  void SetIssuerCommonName(std::string c)   { memcpy(_iss.commonName, (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+  void SetIssuerOrganization(std::string c) { memcpy(_iss.org,        (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+  void SetIssuerOrgUnit(std::string c)      { memcpy(_iss.unit,       (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+
+  void SetSubjectCountry(std::string c)      { memcpy(_sub.country,    (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+  void SetSubjectState(std::string c)        { memcpy(_sub.state,      (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+  void SetSubjectLocal(std::string c)        { memcpy(_sub.locality,   (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+  void SetSubjectCommonName(std::string c)   { memcpy(_sub.commonName, (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+  void SetSubjectOrganization(std::string c) { memcpy(_sub.org,        (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+  void SetSubjectOrgUnit(std::string c)      { memcpy(_sub.unit,       (void*)c.c_str(), strnlen(c.c_str(), 127)+1); };
+
+  void CreateKeyPair(int secStrength) { tsl_id_create_keys(_id, secStrength, _sub); tsl_id_create_self_signed_cert(_id, 9999, _sub); }
+  void CertKey(IEntity &e, long days) { tsl_id_cert(_id, e._id, days, _sub); }
+
+  int VerifyId(const char *ca_cert_path);
+  int VerifyId(tsl_identity_t *ca);
+
+  int StoreId();
   int LoadId();
 
 protected:
-  std::string _localKeys; // = "local_keys/";
   std::string _name; 
+  std::string _localPrivKeys;
+  std::string _localPublKeys;
   std::string _addr; 
   int _port;
   tsl_identity_t *_id;
+  tsl_csr_fields_t _iss;
+  tsl_csr_fields_t _sub;
 };
 
 class Entity : public IEntity
 {
 public:
-  int CreateId(int secStrength); // self signed cert
-  int CreateId(tsl_identity_t *ca, int secStrength); // certifies the key (must be the CA)
-  int VerifyId(const char *ca_cert_path);
+
+  Entity() { };
+  Entity(void *buffer, size_t len) : IEntity(buffer, len) { };
+  Entity(const IEntity &e) : IEntity(e) { };
+  Entity(std::string name) : IEntity(name) { };
+  Entity(std::string name, std::string addr, int port) : IEntity(name, addr, port) { };
+  ~Entity() { };
+
 };
 
 class RemoteEntity : public IEntity
 {
 public:
+
+  RemoteEntity() { };
+  RemoteEntity(void *buffer, size_t len) { };
+  RemoteEntity(const IEntity &e) { };
+  RemoteEntity(std::string name) { };
+  RemoteEntity(std::string name, std::string addr, int port) { };
+  ~RemoteEntity() { };
+
   // public key and/or cert must be in LOCAL_KEYS/_name.*
-  int VerifyId(tsl_identity_t *ca);
   int PairWithKey(tsl_identity_t *pair);
   int CipherMsg(Message &msg);
   int DecipherMsg(Message &msg);

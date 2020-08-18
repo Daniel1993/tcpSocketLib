@@ -208,9 +208,9 @@ int tcpsrv::Message::RespondWith(Message &msg)
   void *buffer;
   long len;
   buffer = msg.GetPayload(len);
-  tsl_last_error_flag = 0;
+  tsl_err_flag = 0;
   _respondWith(buffer, len);
-  if (tsl_last_error_flag) throw tcpsrv::TSLError();
+  if (tsl_err_flag) throw tcpsrv::TSLError();
   return 0;
 }
 
@@ -218,9 +218,9 @@ tcpsrv::Message tcpsrv::Message::WaitResponse()
 {
   unsigned char buffer[FIRST_ALLOC_SIZE << 2];
   size_t len = FIRST_ALLOC_SIZE << 2;
-  tsl_last_error_flag = 0;
+  tsl_err_flag = 0;
   _waitResponse(buffer, &len);
-  if (tsl_last_error_flag) throw tcpsrv::TSLError();
+  if (tsl_err_flag) throw tcpsrv::TSLError();
   return tcpsrv::Message(buffer, len);
 }
 
@@ -237,52 +237,43 @@ int tcpsrv::Message::SetWaitResponse(void(*waitResponse)(void*,size_t*))
   return 0;
 }
 
-int tcpsrv::Entity::CreateId(int secStrength)
+int tcpsrv::IEntity::StoreId()
 {
-  std::string location = _localKeys;
-  tsl_id_create_keys(_id, secStrength, (tsl_csr_fields_t){});
-  tsl_id_create_self_signed_cert(_id, 365, (tsl_csr_fields_t){});
   return tsl_store_identity(_id,
-    (location + _name + ".priv_key").c_str(),
-    (location + _name + ".publ_key").c_str(),
-    (location + _name + ".csr").c_str(),
-    (location + _name + ".cert").c_str(),
-    (location + _name + ".ca").c_str()
-  );
-}
-
-int tcpsrv::Entity::CreateId(tsl_identity_t *ca, int secStrength)
-{
-  std::string location = _localKeys;
-  tsl_id_create_keys(_id, secStrength, (tsl_csr_fields_t){});
-  tsl_id_cert(ca, _id, DAYS_VALID, (tsl_csr_fields_t){});
-  return tsl_store_identity(_id,
-    (location + _name + ".priv_key").c_str(),
-    (location + _name + ".publ_key").c_str(),
-    (location + _name + ".csr").c_str(),
-    (location + _name + ".cert").c_str(),
-    (location + _name + ".ca").c_str()
+    (_localPrivKeys + _name + "_priv_key.pem").c_str(),
+    (_localPublKeys + _name + "_publ_key.pem").c_str(),
+    (_localPublKeys + _name + "_csr.pem").c_str(),
+    (_localPublKeys + _name + "_cert.pem").c_str(),
+    (_localPublKeys + _name + "_ca.pem").c_str()
   );
 }
 
 int tcpsrv::IEntity::LoadId()
 {
-  std::string location = _localKeys;
-
   return tsl_load_identity(_id,
-    (location + _name + ".priv_key").c_str(),
-    (location + _name + ".publ_key").c_str(),
-    (location + _name + ".csr").c_str(),
-    (location + _name + ".cert").c_str(),
-    (location + _name + ".ca").c_str()
+    (_localPrivKeys + _name + "_priv_key.pem").c_str(),
+    (_localPublKeys + _name + "_publ_key.pem").c_str(),
+    (_localPublKeys + _name + "_csr.pem").c_str(),
+    (_localPublKeys + _name + "_cert.pem").c_str(),
+    (_localPublKeys + _name + "_ca.pem").c_str()
   );
 }
 
-int tcpsrv::RemoteEntity::VerifyId(tsl_identity_t *ca)
+int tcpsrv::IEntity::VerifyId(tsl_identity_t *ca)
 {
   const char **err_str = NULL;
   int ret = tsl_id_cert_verify(_id, ca, err_str);
-  if (err_str != NULL) printf("tcpsrv::RemoteEntity::VerifyId: %s\n", *err_str);
+  if (err_str != NULL) printf("tcpsrv::IEntity::VerifyId: %s\n", *err_str);
+  return ret;
+}
+
+int tcpsrv::IEntity::VerifyId(const char *caCert)
+{
+  const char **err_str = NULL;
+  tsl_identity_t *ca = tsl_alloc_identity();
+  tsl_load_identity(ca, NULL, NULL, NULL, caCert, NULL);
+  int ret = tsl_id_cert_verify(_id, ca, err_str);
+  if (err_str != NULL) printf("tcpsrv::IEntity::VerifyId: %s\n", *err_str);
   return ret;
 }
 
